@@ -16,6 +16,10 @@
       "destination": "/api/handler?route=admin/:action"
     },
     {
+      "source": "/garcom",
+      "destination": "/index.html"
+    },
+    {
       "source": "/painel",
       "destination": "/index.html"
     },
