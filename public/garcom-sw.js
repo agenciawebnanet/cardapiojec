@@ -1,5 +1,5 @@
-const cacheName='jc-garcom-v1';
-const paths=['/garcom','/app.js','/style.css','/item-photos.css','/api/menu?table=&k=',
+const cacheName='jc-garcom-v2';
+const paths=['/garcom','/garcom.webmanifest','/img/garcom-192.png','/img/garcom-512.png','/app.js','/style.css','/item-photos.css','/api/menu?table=&k=',
   '/img/hero.webp','/img/bebidas.webp','/img/petiscos.webp','/img/lanches.webp','/img/caldos.webp',
   '/img/itens-bebidas-a.webp','/img/itens-bebidas-b.webp','/img/itens-lanches.webp','/img/itens-petiscos-a.webp','/img/itens-petiscos-b.webp'];
 self.addEventListener('install',event=>{

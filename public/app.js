@@ -1,6 +1,24 @@
 const $=selector=>document.querySelector(selector);
 const root=$('#root'), dialog=$('#dialog'), content=$('#dialog-content'), cartButton=$('#cart');
 const waiter=location.pathname==='/garcom';
+let installPrompt;
+if(waiter) {
+  for(const [rel,href] of [['manifest','/garcom.webmanifest'],['apple-touch-icon','/img/garcom-192.png']]) {
+    const link=document.createElement('link');
+    link.rel=rel;
+    link.href=href;
+    document.head.append(link);
+  }
+  window.addEventListener('beforeinstallprompt',event=>{
+    event.preventDefault();
+    installPrompt=event;
+  });
+  window.addEventListener('appinstalled',()=>{
+    installPrompt=null;
+    const button=$('#waiter-install');
+    if(button) button.hidden=true;
+  });
+}
 const table=location.pathname.startsWith('/mesa/')?location.pathname.split('/')[2]:'';
 const token=new URLSearchParams(location.search).get('k')||'';
 const price=cents=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
@@ -157,7 +175,7 @@ async function openMenu() {
     (waiter?'<h1>Área do garçom</h1><p>Adicione os itens e escolha a mesa ao enviar a comanda.</p>':table?'<h1>Peça da sua mesa.</h1><p>Escolha seus itens e envie ao balcão com seu nome. Cada pessoa pode fazer o próprio pedido.</p>':
     '<h1>Sabor de verdade.</h1><p>Escolha seus favoritos e combine a entrega ou retirada pelo WhatsApp.</p>')+
     '</div><img src="/img/hero.webp" alt="J&C Cardápio com batatas fritas e hambúrguer"></section>'+
-    (waiter?'<section class="box"><p id="waiter-status" role="status"></p><p class="muted" id="waiter-offline">Preparando acesso offline…</p><ul id="waiter-queue"></ul><div class="actions"><button class="secondary" id="waiter-sync">Sincronizar</button><a href="/painel">Painel da cozinha</a></div></section>':'')+
+    (waiter?'<section class="box"><p id="waiter-status" role="status"></p><p class="muted" id="waiter-offline">Preparando acesso offline…</p><ul id="waiter-queue"></ul><div class="actions"><button class="secondary" id="waiter-sync">Sincronizar</button><button class="secondary" id="waiter-install">Instalar app</button><a href="/painel">Painel da cozinha</a></div></section>':'')+
     '<nav class="filters" aria-label="Categorias"></nav><input type="search" class="search" placeholder="Buscar no cardápio" aria-label="Buscar no cardápio"><div id="menu-items"></div>';
   root.querySelector('.search').oninput=event=>{search=event.target.value;drawMenu();};
   root.querySelector('.filters').onclick=event=>{
@@ -234,6 +252,21 @@ async function openWaiter() {
       offlineStatus.textContent='Cardápio disponível neste aparelho sem internet.';
     }).catch(()=>{offlineStatus.textContent='Este aparelho ainda não está pronto para reabrir o cardápio offline.';});
   } else offlineStatus.textContent='Este navegador permite salvar pedidos com a página aberta.';
+  const installButton=$('#waiter-install');
+  installButton.hidden=matchMedia('(display-mode: standalone)').matches || navigator.standalone===true;
+  installButton.onclick=async()=>{
+    if(installPrompt) {
+      const prompt=installPrompt;
+      installPrompt=null;
+      try {
+        await prompt.prompt();
+        const choice=await prompt.userChoice;
+        if(choice.outcome==='accepted')installButton.hidden=true;
+        return;
+      } catch { /* Show manual installation steps if the prompt expired. */ }
+    }
+    show('Instalar J&C Garçom','<p><b>Android:</b> no Chrome, abra o menu ⋮ e toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.</p><p><b>iPhone:</b> no Safari, toque em <b>Compartilhar</b>, depois em <b>Adicionar à Tela de Início</b>.</p>');
+  };
   $('#waiter-sync').onclick=syncWaiterOrders;
   window.addEventListener('online',syncWaiterOrders);
   window.addEventListener('offline',syncWaiterOrders);
