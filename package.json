@@ -1,0 +1,14 @@
+{
+  "name": "jc-cardapio-mesas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/migrate.js"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.2.0"
+  }
+}

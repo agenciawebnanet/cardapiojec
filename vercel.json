@@ -1,0 +1,47 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/menu",
+      "destination": "/api/handler?route=menu"
+    },
+    {
+      "source": "/api/orders",
+      "destination": "/api/handler?route=orders"
+    },
+    {
+      "source": "/api/admin/:action",
+      "destination": "/api/handler?route=admin/:action"
+    },
+    {
+      "source": "/painel",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/mesa/:number",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'"
+        }
+      ]
+    }
+  ],
+  "buildCommand": "npm run build"
+}
