@@ -286,11 +286,14 @@ function beep() {
     oscillator.start(start);oscillator.stop(start+.18);
   }
 }
-function renderBoard(orders) {
-  const board=$('#board');
+function visibleOrders(orders) {
   const filter=$('#table-filter').value;
   const showHistory=$('#history').checked;
-  const visible=orders.filter(order=>(!filter||order.table_number===Number(filter))&&(showHistory||nextSteps[order.status]));
+  return orders.filter(order=>(!filter||order.table_number===Number(filter))&&(showHistory||nextSteps[order.status]));
+}
+function renderBoard(orders) {
+  const board=$('#board');
+  const visible=visibleOrders(orders);
   const tables=[...new Set(visible.map(o=>o.table_number))].sort((a,b)=>a-b);
   board.innerHTML=tables.map(number=>{
     const rows=visible.filter(o=>o.table_number===number);
@@ -300,9 +303,30 @@ function renderBoard(orders) {
       '<small class="muted">#'+escape(o.id.slice(0,8).toUpperCase())+' · '+localTime.format(o.created_at)+'</small>'+
       '<ul>'+o.lines.map(line=>'<li>'+line.qty+'× '+escape(line.name)+(line.extras.length?' <small>+ '+escape(line.extras.join(', '))+'</small>':'')+' · '+price(line.unit*line.qty)+'</li>').join('')+'</ul>'+
       (o.notes?'<p>Obs. '+escape(o.notes)+'</p>':'')+'<p><b>'+price(o.total)+'</b></p>'+
-      '<div class="actions">'+(nextSteps[o.status]||[]).map(([to,label])=>'<button class="secondary" data-order="'+escape(o.id)+'" data-from="'+o.status+'" data-to="'+to+'">'+label+'</button>').join('')+'</div></article>'
+      '<div class="actions"><button class="secondary" data-print="'+escape(o.id)+'">Imprimir comanda</button>'+(nextSteps[o.status]||[]).map(([to,label])=>'<button class="secondary" data-order="'+escape(o.id)+'" data-from="'+o.status+'" data-to="'+to+'">'+label+'</button>').join('')+'</div></article>'
     ).join('')+'</section>';
   }).join('')||'<p class="muted">Nenhuma comanda neste filtro.</p>';
+}
+function printOrders(orders) {
+  if(!orders.length)return;
+  const sheet=document.createElement('div');
+  sheet.className='thermal-print thermal-'+($('#paper-size').value==='58'?'58':'80');
+  sheet.innerHTML=orders.map(order=>'<section class="thermal-ticket"><h2>J&C · Mesa '+
+    escape(String(order.table_number).padStart(2,'0'))+'</h2><p>Comanda #'+escape(order.id.slice(0,8).toUpperCase())+
+    ' · '+localTime.format(order.created_at)+'</p><p>'+escape(order.customer)+'</p><ul>'+
+    order.lines.map(line=>'<li><b>'+line.qty+' × '+escape(line.name)+'</b>'+
+      (line.extras.length?'<div>+ '+escape(line.extras.join(', '))+'</div>':'')+
+      '<div>'+price(line.unit*line.qty)+'</div></li>').join('')+'</ul>'+
+    (order.notes?'<p><b>Obs.</b> '+escape(order.notes)+'</p>':'')+
+    '<p class="thermal-total">Total '+price(order.total)+'</p></section>').join('');
+  document.querySelector('.thermal-print')?.remove();
+  document.body.append(sheet);
+  document.body.classList.add('printing-thermal');
+  window.addEventListener('afterprint',()=>{
+    sheet.remove();
+    document.body.classList.remove('printing-thermal');
+  },{once:true});
+  window.print();
 }
 async function openAdmin(restore=true) {
   $('#mode').textContent='PAINEL DO LOJISTA';
@@ -334,7 +358,7 @@ async function openAdmin(restore=true) {
 function dashboard(links,orders) {
   let current=orders;
   seen=new Set(orders.map(o=>o.id));
-  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><div class="actions"><a class="secondary" href="/garcom">Área do garçom</a><button class="primary" id="sound">Testar alerta sonoro</button><button class="secondary" id="print">Imprimir comandas exibidas</button><button class="secondary" id="exit">Sair</button></div>'+
+  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><div class="actions"><button class="primary" id="sound">Testar alerta sonoro</button><label class="paper-size">Bobina <select id="paper-size"><option value="80">80 mm</option><option value="58">58 mm</option></select></label><button class="secondary" id="print">Imprimir comandas exibidas</button><button class="secondary" id="exit">Sair</button></div>'+
     '<p class="muted" id="connection" role="status"></p><details class="box"><summary>Links das 10 mesas</summary><div class="table-links">'+links.map(link=>
     '<div class="box"><a href="'+escape(link.path)+'" target="_blank" rel="noopener noreferrer">Mesa '+link.n+'</a><button class="secondary" data-copy="'+escape(link.path)+'">Copiar link</button></div>'
   ).join('')+'</div></details><div class="box"><label>Filtrar por mesa<select id="table-filter"><option value="">Todas as mesas</option>'+links.map(link=>'<option value="'+Number(link.n)+'">Mesa '+link.n+'</option>').join('')+'</select></label><label class="choice"><input type="checkbox" id="history"><span>Mostrar fechadas e canceladas das últimas 24h</span></label></div><p class="error" id="board-error" role="alert"></p><div class="board" id="board"></div>';
@@ -377,7 +401,7 @@ function dashboard(links,orders) {
     } catch {$('#connection').textContent='Este navegador não conseguiu ativar o som.';}
   };
   $('#table-filter').onchange=$('#history').onchange=()=>renderBoard(current);
-  $('#print').onclick=()=>window.print();
+  $('#print').onclick=()=>printOrders(visibleOrders(current));
   function endSession() {
     clearInterval(timer);
     audioEvents.abort();
@@ -401,6 +425,11 @@ function dashboard(links,orders) {
     catch {button.textContent='Abra o link para copiar';}
   };
   $('#board').onclick=async event=>{
+    const printButton=event.target.closest('[data-print]');
+    if(printButton) {
+      printOrders(current.filter(order=>order.id===printButton.dataset.print));
+      return;
+    }
     const button=event.target.closest('[data-order]');
     if(!button)return;
     const {order,from,to}=button.dataset;

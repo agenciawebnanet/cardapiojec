@@ -15,3 +15,22 @@ dialog{color:var(--text);background:var(--panel);border:1px solid var(--line);bo
 
 .item-photo{flex:0 0 auto;width:clamp(64px,11vw,96px);aspect-ratio:5/4;border-radius:9px;background-color:#34271f;background-repeat:no-repeat}
 .item-info{flex:1;min-width:0}
+
+
+.paper-size{display:flex;align-items:center;gap:8px}
+.paper-size select{width:auto}
+.thermal-print{display:none}
+@page thermal{size:auto;margin:0}
+@media print{
+  body.printing-thermal{margin:0;padding:0;background:#fff;color:#000;color-scheme:light}
+  body.printing-thermal>:not(.thermal-print){display:none!important}
+  .thermal-print{page:thermal;display:block;width:72mm;max-width:100%;margin:0 auto;padding:2mm 1mm;font:11pt/1.25 Arial,sans-serif;overflow-wrap:anywhere}
+  .thermal-58{width:48mm}
+  .thermal-ticket{padding-bottom:3mm}
+  .thermal-ticket+.thermal-ticket{border-top:1px dashed #000;padding-top:3mm}
+  .thermal-ticket h2{font-size:15pt;margin:0 0 1mm}
+  .thermal-ticket p{margin:0 0 1.5mm;line-height:inherit}
+  .thermal-ticket ul{list-style:none;padding:0;margin:2mm 0;border-top:1px dashed #000}
+  .thermal-ticket li{padding:1mm 0;break-inside:avoid}
+  .thermal-total{border-top:1px dashed #000;padding-top:1.5mm;font-weight:bold}
+}
