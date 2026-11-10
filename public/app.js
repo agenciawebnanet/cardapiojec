@@ -33,7 +33,7 @@ function drawMenu() {
     const items=group.items.filter(i=>fold(i.name+' '+(i.description||'')).includes(query));
     if (!items.length) return '';
     return '<section class="section"><header class="section-head"><img src="/img/'+group.id+'.webp" alt="" loading="lazy"><h2>'+group.title+'</h2></header><div class="grid">'+items.map(item=>
-      '<article class="row"><div><b>'+escape(item.name)+'</b>'+(item.description?'<p>'+escape(item.description)+'</p>':'')+
+      '<article class="row"><span class="item-photo photo-'+item.id+'" aria-hidden="true"></span><div class="item-info"><b>'+escape(item.name)+'</b>'+(item.description?'<p>'+escape(item.description)+'</p>':'')+
       '<strong>'+price(item.price)+'</strong></div><button class="icon" data-item="'+item.id+'" aria-label="Adicionar '+escape(item.name)+'">+</button></article>'
     ).join('')+'</div></section>';
   }).join('')||'<p class="muted">Nenhum item encontrado.</p>';
@@ -132,7 +132,7 @@ async function openMenu() {
   $('#mode').textContent=table?'MESA '+table:'PEDIDO ONLINE';
   menu=await api('/api/menu?'+new URLSearchParams({table,k:token}));
   if (!menu.valid) {
-    root.innerHTML='<p class="error">Este link de mesa é inválido. Use o link fornecido no local.</p><a href="/">Abrir cardápio online</a>';
+    root.innerHTML='<p class="error">Este link de mesa está incompleto ou inválido. Peça ao balcão o link completo da sua mesa, com o código no final.</p><a href="/">Abrir cardápio online</a>';
     return;
   }
   root.innerHTML='<section class="hero"><div class="hero-copy"><p class="eyebrow">Petiscos • Lanches • Bebidas</p>'+
