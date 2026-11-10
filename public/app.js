@@ -331,29 +331,31 @@ function printOrders(orders) {
 async function openAdmin(restore=true) {
   $('#mode').textContent='PAINEL DO LOJISTA';
   root.className='wrap dashboard';
-  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><form class="box" id="login"><label>Chave de acesso<input type="password" name="key" required autocomplete="current-password"></label><button class="primary">Entrar</button><p class="error" id="login-error" role="alert"></p></form>';
+  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><form class="box" id="login"><label>Usuário<input name="username" required autocomplete="username" autocapitalize="none"></label><label>Senha<input type="password" name="password" required autocomplete="current-password"></label><button class="primary">Entrar</button><p class="error" id="login-error" role="alert"></p></form>';
   const form=$('#login'), button=form.querySelector('button');
-  async function signIn(key) {
+  async function signIn(login) {
     button.disabled=true;
     $('#login-error').textContent='';
     try {
-      const links=await adminApi('tables',key?{headers:{'X-JC-Key':key}}:{});
+      if(login) await adminApi('login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(login)});
+      const links=await adminApi('tables');
       const orders=await adminApi('orders');
       dashboard(links,orders);
     } catch(error) {
-      if (key || error.status!==401) $('#login-error').textContent=error.message;
+      if (login || error.status!==401) $('#login-error').textContent=error.message;
       button.disabled=false;
     }
   }
   form.onsubmit=event=>{
     event.preventDefault();
-    const key=new FormData(form).get('key').trim();
-    if(key) {
+    const fields=new FormData(form);
+    const login={username:fields.get('username').trim(),password:fields.get('password')};
+    if(login.username&&login.password) {
       try { enableAudio().catch(()=>{}); } catch { /* Audio is optional. */ }
-      signIn(key);
+      signIn(login);
     }
   };
-  if(restore) await signIn('');
+  if(restore) await signIn();
 }
 function dashboard(links,orders) {
   let current=orders;

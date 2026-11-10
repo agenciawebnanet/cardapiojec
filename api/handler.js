@@ -1,3 +1,4 @@
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
 import { handleApi, tableToken } from '../lib/app.js';
 
@@ -6,6 +7,31 @@ const DB = connection ? neon(connection) : null;
 const upstream = process.env.ORDERS_BACKEND_URL;
 const allowedRoutes = new Set(['menu','orders','admin/tables','admin/orders','admin/status']);
 
+const cookieName='__Host-jc-admin';
+const cookieOptions='Path=/; Secure; HttpOnly; SameSite=Strict';
+const sessionSeconds=31536000;
+const sessionSecret=process.env.PANEL_SESSION_SECRET;
+const credentials=JSON.parse(process.env.PANEL_CREDENTIALS||'null');
+const ordersKey=DB?process.env.ADMIN_KEY:process.env.ORDERS_ADMIN_KEY;
+
+function panelReply(body,status=200,cookie) {
+  const headers={'Cache-Control':'no-store'};
+  if(cookie)headers['Set-Cookie']=cookie;
+  return Response.json(body,{status,headers});
+}
+function equalSecret(a,b) {
+  if(typeof a!=='string'||typeof b!=='string')return false;
+  const digest=value=>createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(a),digest(b));
+}
+function signature(expiry) {
+  return createHmac('sha256',sessionSecret).update(JSON.stringify([credentials.username,credentials.password,expiry])).digest('hex');
+}
+function validPanelSession(request) {
+  const saved=request.headers.get('Cookie')?.match(/(?:^|;\s*)__Host-jc-admin=(\d{10})\.([0-9a-f]{64})(?:;|$)/);
+  return Boolean(saved&&Number(saved[1])>Date.now()/1000&&equalSecret(saved[2],signature(saved[1])));
+}
+
 export default {
   async fetch(request) {
     const incoming = new URL(request.url);
@@ -13,24 +39,25 @@ export default {
       ? incoming.searchParams.get('route')
       : incoming.pathname.slice('/api/'.length);
     if (route === 'waiter-order') return submitWaiterOrder(request, incoming);
-    const session = request.headers.get('X-JC-Session') === '1';
-    const cookie = '__Host-jc-admin';
-    const cookieOptions = 'Path=/; Secure; HttpOnly; SameSite=Strict';
-    if (route === 'admin/logout' && request.method === 'POST' && session) {
-      return Response.json({ok:true}, {headers:{'Set-Cookie':cookie+'=; Max-Age=0; '+cookieOptions,'Cache-Control':'no-store'}});
-    }
-    if (route?.startsWith('admin/') && session) {
-      const headers = new Headers(request.headers);
-      const saved = (headers.get('Cookie') || '').match(/(?:^|;\s*)__Host-jc-admin=([A-Za-z0-9_-]+)/)?.[1];
-      const supplied = headers.get('X-JC-Key');
-      if (!supplied && saved) headers.set('X-JC-Key', saved);
-      const response = await dispatch(new Request(request,{headers}), incoming, route);
-      if (response.ok && route === 'admin/tables' && request.method === 'GET' && /^[A-Za-z0-9_-]+$/.test(supplied || '')) {
-        const result = new Response(response.body, response);
-        result.headers.set('Set-Cookie', cookie+'='+supplied+'; Max-Age=31536000; '+cookieOptions);
-        return result;
+    if (route?.startsWith('admin/')) {
+      if (request.headers.get('X-JC-Session')!=='1') return panelReply({error:'Entre no painel.'},401);
+      if (route==='admin/logout' && request.method==='POST') {
+        return panelReply({ok:true},200,cookieName+'=; Max-Age=0; '+cookieOptions);
       }
-      return response;
+      if(!credentials||!sessionSecret||!ordersKey)return panelReply({error:'Painel indisponível no momento.'},503);
+      if (route==='admin/login') {
+        if(request.method!=='POST')return panelReply({error:'Método indisponível.'},405);
+        const login=await request.json().catch(()=>null);
+        const userOk=equalSecret(login?.username,credentials.username);
+        const passwordOk=equalSecret(login?.password,credentials.password);
+        if(!userOk||!passwordOk)return panelReply({error:'Usuário ou senha inválidos.'},401);
+        const expiry=String(Math.floor(Date.now()/1000)+sessionSeconds);
+        return panelReply({ok:true},200,cookieName+'='+expiry+'.'+signature(expiry)+'; Max-Age='+sessionSeconds+'; '+cookieOptions);
+      }
+      if(!validPanelSession(request))return panelReply({error:'Entre no painel.'},401);
+      const headers=new Headers(request.headers);
+      headers.set('X-JC-Key',ordersKey);
+      return dispatch(new Request(request,{headers}),incoming,route);
     }
     return dispatch(request, incoming, route);
   }
