@@ -159,13 +159,17 @@ let timer, audio, seen=new Set(), loading=false;
 function adminApi(path,options={}) {
   return api('/api/admin/'+path,{...options,headers:{'X-JC-Session':'1',...options.headers}});
 }
+function enableAudio() {
+  audio??=new (window.AudioContext||window.webkitAudioContext)();
+  return audio.state==='running'?Promise.resolve():audio.resume();
+}
 function beep() {
   if(audio?.state!=='running')return;
   for(const [offset,frequency] of [[0,740],[.18,980],[.36,1140]]) {
     const start=audio.currentTime+offset;
     const oscillator=audio.createOscillator(), gain=audio.createGain();
     oscillator.frequency.value=frequency;
-    gain.gain.setValueAtTime(.18,start);
+    gain.gain.setValueAtTime(.52,start);
     gain.gain.exponentialRampToValueAtTime(.001,start+.17);
     oscillator.connect(gain);gain.connect(audio.destination);
     oscillator.start(start);oscillator.stop(start+.18);
@@ -209,19 +213,22 @@ async function openAdmin(restore=true) {
   form.onsubmit=event=>{
     event.preventDefault();
     const key=new FormData(form).get('key').trim();
-    if(key)signIn(key);
+    if(key) {
+      try { enableAudio().catch(()=>{}); } catch { /* Audio is optional. */ }
+      signIn(key);
+    }
   };
   if(restore) await signIn('');
 }
 function dashboard(links,orders) {
   let current=orders;
   seen=new Set(orders.map(o=>o.id));
-  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><div class="actions"><button class="primary" id="sound">Ativar alerta sonoro</button><button class="secondary" id="print">Imprimir comandas exibidas</button><button class="secondary" id="exit">Sair</button></div>'+
+  root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><div class="actions"><button class="primary" id="sound">Testar alerta sonoro</button><button class="secondary" id="print">Imprimir comandas exibidas</button><button class="secondary" id="exit">Sair</button></div>'+
     '<p class="muted" id="connection" role="status"></p><details class="box"><summary>Links das 10 mesas</summary><div class="table-links">'+links.map(link=>
     '<div class="box"><a href="'+escape(link.path)+'" target="_blank" rel="noopener noreferrer">Mesa '+link.n+'</a><button class="secondary" data-copy="'+escape(link.path)+'">Copiar link</button></div>'
   ).join('')+'</div></details><div class="box"><label>Filtrar por mesa<select id="table-filter"><option value="">Todas as mesas</option>'+links.map(link=>'<option value="'+Number(link.n)+'">Mesa '+link.n+'</option>').join('')+'</select></label><label class="choice"><input type="checkbox" id="history"><span>Mostrar fechadas e canceladas das últimas 24h</span></label></div><p class="error" id="board-error" role="alert"></p><div class="board" id="board"></div>';
   function connection() {
-    $('#connection').textContent='Atualização automática a cada 4 segundos. '+(audio?.state==='running'?'Som ativo. Mantenha o painel aberto.':'Ative o som para ouvir novas comandas.');
+    $('#connection').textContent='Atualização automática a cada 4 segundos. '+(audio?.state==='running'?'Som ativo. Mantenha o painel aberto.':'Alerta ligado. Se o navegador bloquear o som, toque no painel para liberar.');
   }
   async function refresh() {
     if(loading) return;
@@ -238,16 +245,31 @@ function dashboard(links,orders) {
       if($('#connection')) $('#connection').textContent='Falha de atualização. Tentando reconectar…';
     } finally {loading=false;}
   }
+  const audioEvents=new AbortController();
+  function startAudio() {
+    if(audio?.state==='running')return;
+    try {
+      enableAudio().then(()=>{
+        if(audioEvents.signal.aborted)return;
+        connection();
+      }).catch(()=>{});
+    } catch { /* The browser may not support audio. */ }
+  }
+  for(const event of ['pointerup','keydown','touchend']) {
+    root.addEventListener(event,startAudio,{signal:audioEvents.signal});
+  }
   $('#sound').onclick=async()=>{
     try {
-      audio??=new (window.AudioContext||window.webkitAudioContext)();
-      await audio.resume();beep();connection();$('#sound').textContent='Testar alerta sonoro';
+      await enableAudio();
+      if(!$('#board'))return;
+      beep();connection();
     } catch {$('#connection').textContent='Este navegador não conseguiu ativar o som.';}
   };
   $('#table-filter').onchange=$('#history').onchange=()=>renderBoard(current);
   $('#print').onclick=()=>window.print();
   function endSession() {
     clearInterval(timer);
+    audioEvents.abort();
     audio?.close();
     audio=null;
     openAdmin(false);
@@ -280,7 +302,7 @@ function dashboard(links,orders) {
     } catch(error) {$('#board-error').textContent=error.message;}
     finally {button.disabled=false;}
   };
-  connection();renderBoard(current);timer=setInterval(refresh,4000);
+  connection();renderBoard(current);startAudio();timer=setInterval(refresh,4000);
 }
 
 (location.pathname==='/painel'?openAdmin():openMenu()).catch(()=>{
