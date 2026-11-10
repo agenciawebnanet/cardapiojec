@@ -11,7 +11,7 @@ let menu, selected='', search='', cart=[], draft={}, attempt=null, busy=false;
 async function api(path,options={}) {
   const response=await fetch(path,options);
   const data=await response.json();
-  if (!response.ok) throw new Error(data.error||'Falha de conexão.');
+  if (!response.ok) throw Object.assign(new Error(data.error||'Falha de conexão.'),{status:response.status});
   return data;
 }
 function show(title,body) {
@@ -155,9 +155,9 @@ async function openMenu() {
 const statusLabels={novo:'Novo',preparo:'Em preparo',entregue:'Entregue',fechado:'Fechado',cancelado:'Cancelado'};
 const nextSteps={novo:[['preparo','Iniciar preparo'],['cancelado','Cancelar']],preparo:[['entregue','Marcar entregue'],['cancelado','Cancelar']],entregue:[['fechado','Fechar comanda']]};
 const localTime=new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit'});
-let adminKey='', timer, audio, seen=new Set(), loading=false;
+let timer, audio, seen=new Set(), loading=false;
 function adminApi(path,options={}) {
-  return api('/api/admin/'+path,{...options,headers:{'X-JC-Key':adminKey,...options.headers}});
+  return api('/api/admin/'+path,{...options,headers:{'X-JC-Session':'1',...options.headers}});
 }
 function beep() {
   if(audio?.state!=='running')return;
@@ -189,22 +189,29 @@ function renderBoard(orders) {
     ).join('')+'</section>';
   }).join('')||'<p class="muted">Nenhuma comanda neste filtro.</p>';
 }
-async function openAdmin() {
+async function openAdmin(restore=true) {
   $('#mode').textContent='PAINEL DO LOJISTA';
   root.className='wrap dashboard';
   root.innerHTML='<p class="eyebrow">Operação • J&C</p><h1>Comandas de mesa</h1><form class="box" id="login"><label>Chave de acesso<input type="password" name="key" required autocomplete="current-password"></label><button class="primary">Entrar</button><p class="error" id="login-error" role="alert"></p></form>';
-  $('#login').onsubmit=async event=>{
-    event.preventDefault();
-    const form=event.currentTarget, button=form.querySelector('button');
+  const form=$('#login'), button=form.querySelector('button');
+  async function signIn(key) {
     button.disabled=true;
-    adminKey=new FormData(form).get('key').trim();
+    $('#login-error').textContent='';
     try {
-      const [links,orders]=await Promise.all([adminApi('tables'),adminApi('orders')]);
+      const links=await adminApi('tables',key?{headers:{'X-JC-Key':key}}:{});
+      const orders=await adminApi('orders');
       dashboard(links,orders);
     } catch(error) {
-      adminKey='';$('#login-error').textContent=error.message;button.disabled=false;
+      if (key || error.status!==401) $('#login-error').textContent=error.message;
+      button.disabled=false;
     }
+  }
+  form.onsubmit=event=>{
+    event.preventDefault();
+    const key=new FormData(form).get('key').trim();
+    if(key)signIn(key);
   };
+  if(restore) await signIn('');
 }
 function dashboard(links,orders) {
   let current=orders;
@@ -217,7 +224,7 @@ function dashboard(links,orders) {
     $('#connection').textContent='Atualização automática a cada 4 segundos. '+(audio?.state==='running'?'Som ativo. Mantenha o painel aberto.':'Ative o som para ouvir novas comandas.');
   }
   async function refresh() {
-    if(loading||!adminKey) return;
+    if(loading) return;
     loading=true;
     try {
       const data=await adminApi('orders');
@@ -226,7 +233,8 @@ function dashboard(links,orders) {
       for(const order of data) seen.add(order.id);
       if(JSON.stringify(data)!==JSON.stringify(current)){current=data;renderBoard(current);}
       connection();
-    } catch {
+    } catch(error) {
+      if(error.status===401 && $('#board')) { endSession(); return; }
       if($('#connection')) $('#connection').textContent='Falha de atualização. Tentando reconectar…';
     } finally {loading=false;}
   }
@@ -238,7 +246,23 @@ function dashboard(links,orders) {
   };
   $('#table-filter').onchange=$('#history').onchange=()=>renderBoard(current);
   $('#print').onclick=()=>window.print();
-  $('#exit').onclick=()=>{clearInterval(timer);adminKey='';audio?.close();audio=null;openAdmin();};
+  function endSession() {
+    clearInterval(timer);
+    audio?.close();
+    audio=null;
+    openAdmin(false);
+  }
+  $('#exit').onclick=async event=>{
+    const button=event.currentTarget;
+    button.disabled=true;
+    try {
+      await adminApi('logout',{method:'POST'});
+      endSession();
+    } catch(error) {
+      button.disabled=false;
+      $('#board-error').textContent=error.message;
+    }
+  };
   for(const button of root.querySelectorAll('[data-copy]'))button.onclick=async()=>{
     try {await navigator.clipboard.writeText(new URL(button.dataset.copy,location.origin).href);button.textContent='Link copiado';}
     catch {button.textContent='Abra o link para copiar';}
