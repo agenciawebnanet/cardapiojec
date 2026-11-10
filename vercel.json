@@ -8,6 +8,10 @@
       "destination": "/api/handler?route=menu"
     },
     {
+      "source": "/api/waiter-order",
+      "destination": "/api/handler?route=waiter-order"
+    },
+    {
       "source": "/api/orders",
       "destination": "/api/handler?route=orders"
     },

@@ -89,7 +89,7 @@ function checkout() {
     '<form id="checkout">'+(waiter?'<label>Mesa<select name="table" required><option value="">Escolha a mesa</option>'+Array.from({length:10},(_,i)=>{
       const number=String(i+1).padStart(2,'0');
       return '<option value="'+number+'">Mesa '+number+'</option>';
-    }).join('')+'</select></label>':'')+'<label>'+ (table||waiter?'Seu nome na comanda':'Seu nome') +'<input name="name" required maxlength="70" autocomplete="given-name" placeholder="Ex. Pedro"></label>'+deliveryFields+
+    }).join('')+'</select></label>':'<label>'+ (table?'Seu nome na comanda':'Seu nome') +'<input name="name" required maxlength="70" autocomplete="given-name" placeholder="Ex. Pedro"></label>')+deliveryFields+
     '<label>Observações<textarea name="notes" rows="2" maxlength="400" placeholder="Ex. sem cebola"></textarea></label><p id="checkout-error" class="error" role="alert"></p>'+
     '<button class="primary wide">'+(waiter?'Enviar para a cozinha':table?'Enviar comanda para o balcão':'Abrir pedido no WhatsApp')+'</button></form>');
   const form=$('#checkout');
@@ -117,11 +117,11 @@ function checkout() {
     if(busy) return;
     draft=Object.fromEntries(new FormData(form));
     for (const key of Object.keys(draft)) draft[key]=draft[key].trim();
-    if (!draft.name || (draft.mode==='entrega'&&(!draft.address||!draft.district))) {
+    if ((!waiter&&!draft.name) || (draft.mode==='entrega'&&(!draft.address||!draft.district))) {
       $('#checkout-error').textContent='Preencha o nome e os dados obrigatórios.';return;
     }
     if (waiter) {
-      const order={id:crypto.randomUUID(),table:draft.table,name:draft.name,notes:draft.notes,items:cart.map(line=>({id:line.id,qty:line.qty,extras:line.extraIds}))};
+      const order={id:crypto.randomUUID(),table:draft.table,notes:draft.notes,items:cart.map(line=>({id:line.id,qty:line.qty,extras:line.extraIds}))};
       try {
         localStorage.setItem(waiterPrefix+order.id,JSON.stringify(order));
       } catch {
@@ -175,7 +175,7 @@ async function openMenu() {
     (waiter?'<h1>Área do garçom</h1><p>Adicione os itens e escolha a mesa ao enviar a comanda.</p>':table?'<h1>Peça da sua mesa.</h1><p>Escolha seus itens e envie ao balcão com seu nome. Cada pessoa pode fazer o próprio pedido.</p>':
     '<h1>Sabor de verdade.</h1><p>Escolha seus favoritos e combine a entrega ou retirada pelo WhatsApp.</p>')+
     '</div><img src="/img/hero.webp" alt="J&C Cardápio com batatas fritas e hambúrguer"></section>'+
-    (waiter?'<section class="box"><p id="waiter-status" role="status"></p><p class="muted" id="waiter-offline">Preparando acesso offline…</p><ul id="waiter-queue"></ul><div class="actions"><button class="secondary" id="waiter-sync">Sincronizar</button><button class="secondary" id="waiter-install">Instalar app</button><a href="/painel">Painel da cozinha</a></div></section>':'')+
+    (waiter?'<section class="box"><p id="waiter-status" role="status"></p><p class="muted" id="waiter-offline">Preparando acesso offline…</p><ul id="waiter-queue"></ul><div class="actions"><button class="secondary" id="waiter-sync">Sincronizar</button><button class="secondary" id="waiter-install">Instalar app</button></div></section>':'')+
     '<nav class="filters" aria-label="Categorias"></nav><input type="search" class="search" placeholder="Buscar no cardápio" aria-label="Buscar no cardápio"><div id="menu-items"></div>';
   root.querySelector('.search').oninput=event=>{search=event.target.value;drawMenu();};
   root.querySelector('.filters').onclick=event=>{
@@ -196,7 +196,7 @@ function waiterOrders() {
     .map(key=>JSON.parse(localStorage.getItem(key))).filter(Boolean);
 }
 function updateWaiterQueue() {
-  $('#waiter-queue').innerHTML=waiterOrders().map(order=>'<li>Mesa '+escape(order.table)+' · '+escape(order.name)+' · Aguardando envio</li>').join('');
+  $('#waiter-queue').innerHTML=waiterOrders().map(order=>'<li>Mesa '+escape(order.table)+' · '+escape(order.name||'Garçom')+' · Aguardando envio</li>').join('');
 }
 async function syncWaiterOrders() {
   if(waiterSyncing) return;
@@ -209,16 +209,11 @@ async function syncWaiterOrders() {
       status.textContent='Sem internet. As comandas ficam salvas neste aparelho até o envio.';
       return;
     }
-    const links=await adminApi('tables',{signal:AbortSignal.timeout(10000)});
-    localStorage.setItem('jc-waiter-ready','1');
     let refused=0;
     for(const order of orders) {
-      const link=links.find(entry=>entry.n===order.table);
-      if(!link) throw new Error('Mesa inválida na fila.');
-      const token=new URL(link.path,location.origin).searchParams.get('k');
       try {
-        await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({...order,token}),signal:AbortSignal.timeout(12000)});
+        await api('/api/waiter-order',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(order),signal:AbortSignal.timeout(12000)});
       } catch(error) {
         if(![400,403,409,422].includes(error.status))throw error;
         refused++;
@@ -231,9 +226,7 @@ async function syncWaiterOrders() {
     else if(orders.length) status.textContent='Comandas enviadas para a cozinha.';
     else if(!status.textContent.startsWith('Comandas enviadas')) status.textContent='Pronto para enviar à cozinha.';
   } catch(error) {
-    status.textContent=error.status===401
-      ? 'Entre no painel da cozinha para liberar o envio. Os pedidos salvos ficam na fila.'
-      : error.status>=400&&error.status<500
+    status.textContent=error.status>=400&&error.status<500
         ? 'A cozinha recusou uma comanda. Ela continua na fila. '+error.message
         : 'Conexão indisponível. As comandas salvas serão reenviadas.';
   } finally {
@@ -241,10 +234,6 @@ async function syncWaiterOrders() {
   }
 }
 async function openWaiter() {
-  const links=await adminApi('tables',{signal:AbortSignal.timeout(10000)}).catch(error=>{
-    if(error.status===401 || !localStorage.getItem('jc-waiter-ready')) throw error;
-  });
-  if(links) localStorage.setItem('jc-waiter-ready','1');
   await openMenu();
   const offlineStatus=$('#waiter-offline');
   if('serviceWorker' in navigator) {
@@ -429,7 +418,7 @@ function dashboard(links,orders) {
 
 (location.pathname==='/painel'?openAdmin():waiter?openWaiter():openMenu()).catch(()=>{
   if(waiter) {
-    root.innerHTML='<h1>Área do garçom</h1><p>Conecte à internet e entre no painel da cozinha para preparar este aparelho.</p><a class="primary" href="/painel">Entrar no painel</a>';
+    root.innerHTML='<h1>Área do garçom</h1><p>Conecte à internet para carregar o cardápio e tente novamente.</p><a class="primary" href="/garcom">Tentar novamente</a>';
     return;
   }
   root.innerHTML='<p class="error">Não foi possível carregar. Recarregue a página para tentar novamente.</p>';
