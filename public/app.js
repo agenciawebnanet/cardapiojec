@@ -155,9 +155,13 @@ function checkout() {
         return;
       }
       cart=[];draft={table:order.table};refreshCart();
-      show('Pedido salvo','<p>Acompanhe o envio para a cozinha na fila do garçom.</p>');
       updateWaiterQueue();
-      syncWaiterOrders();
+      await syncWaiterOrders();
+      if(localStorage.getItem(waiterPrefix+order.id)) {
+        show('Envio pendente','<p>A comanda foi salva neste aparelho, mas <b>a cozinha ainda não confirmou o recebimento</b>.</p><p>Volte à área do garçom e toque em <b>Sincronizar</b>. Não apague os dados do aplicativo enquanto houver pedidos pendentes.</p>');
+      } else {
+        show('Comanda enviada','<p class="ok">Pedido recebido pelo sistema da cozinha e disponível no painel de comandas.</p>');
+      }
       return;
     }
     if (!table) {
